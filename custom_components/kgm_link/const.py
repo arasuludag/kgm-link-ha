@@ -65,6 +65,11 @@ F_LAT = "pcktGpsLae"
 F_LON = "pcktGpsLoe"
 F_LOC_VALID = "locExYn"
 
+# --- Charging-status enum (app labels; int mapping confirmed: 2 = not charging) ---
+# TODO: confirm the "charging" int value from a live charging session (likely 1).
+CHARGING_STATES: dict[int, str] = {0: "unknown", 1: "charging", 2: "not_charging"}
+CHARGING_ACTIVE = {1}  # int values that mean "actively charging"
+
 # --- Poll behaviour ---------------------------------------------------------
 # The regular poll uses VehiclesChangeDetail — the same cached read the app shows
 # on open: no PIN, no wake, no 12 V cost — so it can run often. The CmdEv wake

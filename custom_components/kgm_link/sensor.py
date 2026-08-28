@@ -23,6 +23,8 @@ from homeassistant.util import dt as dt_util
 
 from . import KgmLinkConfigEntry
 from .const import (
+    CHARGING_ACTIVE,
+    CHARGING_STATES,
     DOMAIN,
     F_CHARGE_80_H,
     F_CHARGE_80_M,
@@ -41,6 +43,17 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
     dt = dt_util.parse_datetime(str(value))
     return dt_util.as_local(dt) if dt and dt.tzinfo is None else dt
+
+
+def _is_charging(status: dict[str, Any]) -> bool:
+    return status.get(F_CHARGING_STAT) in CHARGING_ACTIVE
+
+
+def _charge_mins(status: dict[str, Any], h_key: str, m_key: str) -> int | None:
+    # The API returns a placeholder (both timers equal) when not charging.
+    if not _is_charging(status):
+        return None
+    return _mins(status, h_key, m_key)
 
 
 def _mins(status: dict[str, Any], h_key: str, m_key: str) -> int | None:
@@ -75,21 +88,23 @@ SENSORS: tuple[KgmSensor, ...] = (
     KgmSensor(
         key="charging_status",
         translation_key="charging_status",
-        value_fn=lambda s: s.get(F_CHARGING_STAT),
+        device_class=SensorDeviceClass.ENUM,
+        options=["charging", "not_charging", "unknown"],
+        value_fn=lambda s: CHARGING_STATES.get(s.get(F_CHARGING_STAT), "unknown"),
     ),
     KgmSensor(
         key="time_to_full",
         translation_key="time_to_full",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.MINUTES,
-        value_fn=lambda s: _mins(s, F_CHARGE_FULL_H, F_CHARGE_FULL_M),
+        value_fn=lambda s: _charge_mins(s, F_CHARGE_FULL_H, F_CHARGE_FULL_M),
     ),
     KgmSensor(
         key="time_to_80",
         translation_key="time_to_80",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.MINUTES,
-        value_fn=lambda s: _mins(s, F_CHARGE_80_H, F_CHARGE_80_M),
+        value_fn=lambda s: _charge_mins(s, F_CHARGE_80_H, F_CHARGE_80_M),
     ),
     KgmSensor(
         key="odometer",

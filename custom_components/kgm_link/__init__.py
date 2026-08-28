@@ -16,7 +16,12 @@ from .coordinator import KgmLinkCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.DEVICE_TRACKER, Platform.BUTTON]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.DEVICE_TRACKER,
+    Platform.BUTTON,
+]
 
 type KgmLinkConfigEntry = ConfigEntry[list[KgmLinkCoordinator]]
 

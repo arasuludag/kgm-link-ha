@@ -29,7 +29,12 @@
         "name": "Range"
       },
       "charging_status": {
-        "name": "Charging status"
+        "name": "Charging status",
+        "state": {
+          "charging": "Charging",
+          "not_charging": "Not charging",
+          "unknown": "Unknown"
+        }
       },
       "time_to_full": {
         "name": "Time to full charge"
@@ -55,6 +60,11 @@
       },
       "refresh": {
         "name": "Refresh (wake car)"
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "Charging"
       }
     }
   }

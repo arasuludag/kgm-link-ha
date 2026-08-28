@@ -1,0 +1,61 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "KGM Link",
+        "description": "Log in with your KGM Link account. The remote PIN is needed to read live vehicle status.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "pin": "Remote-control PIN",
+          "region": "Region code (e.g. tr)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Could not reach KGM Link."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "range": {
+        "name": "Range"
+      },
+      "charging_status": {
+        "name": "Charging status"
+      },
+      "time_to_full": {
+        "name": "Time to full charge"
+      },
+      "time_to_80": {
+        "name": "Time to 80%"
+      },
+      "odometer": {
+        "name": "Odometer"
+      },
+      "last_updated": {
+        "name": "Last updated"
+      }
+    },
+    "device_tracker": {
+      "car": {
+        "name": "Location"
+      }
+    },
+    "button": {
+      "locate": {
+        "name": "Locate vehicle"
+      },
+      "refresh": {
+        "name": "Refresh (wake car)"
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# Captures hold live credentials, bearer tokens, nonces and VIN — never commit
+captures/
+*.har
+*.proxyman
+*.saz
+
+# Recovered secrets / dumped binaries — keep out of the public repo
+research/dumps/
+research/secrets/
+*.dylib
+*.decrypted
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# local dev/research tools — not for the public repo
+research/probe_*.py
+.venv/

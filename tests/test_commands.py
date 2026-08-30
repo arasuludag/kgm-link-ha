@@ -39,19 +39,20 @@ def send(coro_factory, pin="1234", response=None):
 def test_door_lock_body():
     path, body = send(lambda c: c.async_set_door_lock(42, True))
     assert path == "/Customer/V1/RemoteDoor"
-    assert body == {"vehicleId": 42, "pin": "1234", "isDoorLock": True}
+    assert body == {"vehlId": 42, "pin": "1234", "doorLock": True}
 
 
 def test_unlock_flips_the_flag():
     _, body = send(lambda c: c.async_set_door_lock(42, False))
-    assert body["isDoorLock"] is False
+    assert body["doorLock"] is False
 
 
-def test_remote_commands_use_vehicleid_not_vehlid():
-    """The status endpoints use `vehlId`; the remote ones use `vehicleId`."""
+def test_remote_commands_use_vehlid():
+    """Confirmed against the live server: remote commands take `vehlId`, like every
+    other endpoint. An earlier reading of the binary said `vehicleId` — it was wrong."""
     _, body = send(lambda c: c.async_set_door_lock(42, True))
-    assert "vehicleId" in body
-    assert "vehlId" not in body
+    assert "vehlId" in body
+    assert "vehicleId" not in body
 
 
 def test_charge_start_and_stop_are_different_endpoints():
@@ -59,10 +60,16 @@ def test_charge_start_and_stop_are_different_endpoints():
     stop, body = send(lambda c: c.async_set_charging(42, False))
     assert start == "/Customer/V1/ImmediateChargeStartCmd"
     assert stop == "/Customer/V1/ImmediateChargeCancelCmd"
-    assert body == {"vehicleId": 42, "pin": "1234"}
+    assert body == {"vehlId": 42, "pin": "1234"}
 
 
 def test_climate_start_body():
+    """Wire keys, not the Swift property names — see research/PROTOCOL.md §7.2.
+
+    Only `vehicleId`, `pin` and `rearWndoHtln` are confirmed against the live server so
+    far; the rest are still the CodingKeys property names and the server will reject them.
+    Each one gets corrected here as probe_commands.py recovers it.
+    """
     path, body = send(
         lambda c: c.async_start_climate(
             42,
@@ -70,24 +77,24 @@ def test_climate_start_body():
             duration=10,
             defrost=True,
             rear_window_heat=False,
-            seats={"driveSeat": 3},
+            seats={"drvtSeat": 3},
         )
     )
     assert path == "/Customer/V1/RemoteEngineStartEv"
     assert body == {
-        "vehicleId": 42,
+        "vehlId": 42,
         "pin": "1234",
         "hvacOn": True,
-        "defrostOn": True,
-        "rearWindowHeatOn": False,
-        "acTemperature": 21.5,
-        "timeoutToTurnOffEngine": 10,
-        "driveSeat": 3,
-        "passengerSeat": 0,
-        "secondLeftSeat": 0,
-        "secondRightSeat": 0,
-        "thirdLeftSeat": 0,
-        "thirdRightSeat": 0,
+        "dfstOn": True,
+        "rearWndoHtln": False,
+        "aconTmpt": 21.5,
+        "tot": 10,
+        "drvtSeat": 3,
+        "psstSeat": 0,
+        "scndLeftSeat": 0,
+        "scndRghtSeat": 0,
+        "thrdLeftSeat": 0,
+        "thrdRghtSeat": 0,
     }
 
 
@@ -101,11 +108,11 @@ def test_climate_start_always_sends_every_seat():
 def test_lamp_horn_on_and_off():
     path, body = send(lambda c: c.async_set_lamp_horn(42, lamp=True, horn=False))
     assert path == "/Customer/V1/RemoteLampHornOn"
-    assert body == {"vehicleId": 42, "pin": "1234", "lamp": True, "lampHorn": False}
+    assert body == {"vehlId": 42, "pin": "1234", "lamp": True, "lampHorn": False}
 
     path, body = send(lambda c: c.async_set_lamp_horn(42, lamp=False, horn=False))
     assert path == "/Customer/V1/RemoteLampHornOff"
-    assert body == {"vehicleId": 42, "pin": "1234"}
+    assert body == {"vehlId": 42, "pin": "1234"}
 
 
 def test_no_pin_is_refused_before_anything_is_sent():
@@ -192,3 +199,40 @@ def test_climate_stop_does_not_spend_a_second_pin_attempt():
     with pytest.raises(api.KgmLinkApiError):
         asyncio.run(BadPin(session=None, pin="0000").async_stop_climate(42))
     assert tried == ["/Customer/V1/RemoteHvacStop"], f"retried after a PIN failure: {tried}"
+
+
+def test_value_types_match_what_the_server_accepts():
+    """The server is picky per field, and its rules are not uniform.
+
+    Verified against the live API: the boolean flags take JSON booleans and reject
+    "Y"/"N"/"1"/"0"; the seat levels take integers and reject booleans; and aconTmpt
+    and tot take a non-zero number (0 is rejected outright for both).
+    """
+    _, body = send(
+        lambda c: c.async_start_climate(
+            42, temperature=21.5, duration=10, defrost=True, rear_window_heat=False
+        )
+    )
+    for flag in ("hvacOn", "dfstOn", "rearWndoHtln"):
+        assert isinstance(body[flag], bool), f"{flag} must stay a JSON boolean"
+    for seat in const.SEAT_FIELDS:
+        assert isinstance(body[seat], int) and not isinstance(body[seat], bool), seat
+    assert isinstance(body["aconTmpt"], (int, float)) and body["aconTmpt"] > 0
+    assert isinstance(body["tot"], int) and body["tot"] > 0
+
+    _, door = send(lambda c: c.async_set_door_lock(42, False))
+    assert door["doorLock"] is False, "unlock is a real JSON false, not a string"
+
+    _, horn = send(lambda c: c.async_set_lamp_horn(42, lamp=True, horn=False))
+    assert horn["lamp"] is True and horn["lampHorn"] is False
+
+
+def test_the_five_bare_commands_send_nothing_extra():
+    """Server-confirmed: these take vehlId + pin and nothing else."""
+    for factory in (
+        lambda c: c.async_set_charging(42, True),
+        lambda c: c.async_set_charging(42, False),
+        lambda c: c.async_set_lamp_horn(42, lamp=False, horn=False),
+    ):
+        _, body = send(factory)
+        assert set(body) == {"vehlId", "pin"}, body

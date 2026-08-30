@@ -52,7 +52,6 @@ from .const import (
     F_REFRESH_TOKEN,
     F_TOKEN,
     F_VEHICLES,
-    F_VEHICLE_ID,
     F_VEHL_ID,
     SEAT_FIELDS,
     RESULT_POLL_INTERVAL_S,
@@ -220,9 +219,14 @@ class KgmLinkClient:
     # only one remote command at a time. Results are NOT pollable — the app gets
     # them by Firebase push (research/PROTOCOL.md §7.3) — so a successful return
     # here means "the server accepted the command", not "the car did it".
+    #
+    # The key names below are the wire names the server actually asks for, which are
+    # NOT the Swift property names in the binary (research/PROTOCOL.md §7.2). Anything
+    # still marked UNVERIFIED in const.py will be rejected with "10001 <real> is
+    # required" until research/probe_commands.py recovers it.
 
     async def _remote(self, path: str, vehicle_id: int, **extra: Any) -> dict[str, Any]:
-        body = {F_VEHICLE_ID: int(vehicle_id), F_PIN: self._require_pin(), **extra}
+        body = {F_VEHL_ID: int(vehicle_id), F_PIN: self._require_pin(), **extra}
         async with self._command_lock:
             data = await self._post(path, body)
         if data.get("isPinLocked"):

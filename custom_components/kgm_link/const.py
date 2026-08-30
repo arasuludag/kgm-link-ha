@@ -92,21 +92,29 @@ EP_LAMP_HORN_ON = "/Customer/V1/RemoteLampHornOn"        # {vehicleId, pin, lamp
 EP_LAMP_HORN_OFF = "/Customer/V1/RemoteLampHornOff"      # {vehicleId, pin}
 
 # --- Remote command body fields ---------------------------------------------
-F_VEHICLE_ID = "vehicleId"       # remote commands only (cf. F_VEHL_ID elsewhere)
-F_PIN = "pin"
-F_IS_DOOR_LOCK = "isDoorLock"    # True = lock, False = unlock
-F_LAMP = "lamp"
-F_LAMP_HORN = "lampHorn"
+# ⚠️ UNVERIFIED except where marked. These came from the CodingKeys *property* names in
+# the app binary; the real wire keys are the enum's raw values, which are abbreviated and
+# not recoverable statically (research/PROTOCOL.md §7.2). The server rejects a wrong name
+# with "10001 <realName> is required" — run research/probe_commands.py to recover them.
+# CONFIRMED 2026-08-31: remote commands take the SAME vehlId as the status endpoints.
+# (An earlier note here claimed they used "vehicleId" — that was wrong; the server asks
+# for vehlId on every one of the eight command endpoints.)
+F_PIN = "pin"                    # CONFIRMED on the wire
+F_IS_DOOR_LOCK = "doorLock"      # CONFIRMED
+F_LAMP = "lamp"                  # CONFIRMED
+F_LAMP_HORN = "lampHorn"         # CONFIRMED
 # RemoteEngineStartV1Body
-F_HVAC_ON = "hvacOn"
-F_DEFROST_ON = "defrostOn"
-F_REAR_HEAT_ON = "rearWindowHeatOn"
-F_AC_TEMPERATURE = "acTemperature"
-F_ENGINE_TIMEOUT = "timeoutToTurnOffEngine"   # minutes; the app caps this at 10
+F_HVAC_ON = "hvacOn"             # CONFIRMED
+F_DEFROST_ON = "dfstOn"          # CONFIRMED
+F_REAR_HEAT_ON = "rearWndoHtln"   # CONFIRMED — the server named it in an error
+F_AC_TEMPERATURE = "aconTmpt"    # CONFIRMED
+F_ENGINE_TIMEOUT = "tot"         # CONFIRMED; minutes, the app caps at 10
+# CONFIRMED wire names. Note the irregular abbreviations — drvt/psst/scnd/thrd, and
+# "Rght" without the i — none of which could have been guessed from the Swift names.
 SEAT_FIELDS: tuple[str, ...] = (
-    "driveSeat", "passengerSeat",
-    "secondLeftSeat", "secondRightSeat",
-    "thirdLeftSeat", "thirdRightSeat",
+    "drvtSeat", "psstSeat",
+    "scndLeftSeat", "scndRghtSeat",
+    "thrdLeftSeat", "thrdRghtSeat",
 )
 
 # --- Wake-only status fields (VehicleStatusCheckResultEv) --------------------
@@ -142,9 +150,17 @@ MAX_CLIMATE_DURATION = 10
 DEFAULT_CLIMATE_DURATION = 10
 
 # --- Seat heat/vent levels (SeatLevelValue) ---------------------------------
-# The enum is symmetric around "nope", so the raw values are almost certainly
-# -3..+3. INFERRED from declaration order, not observed on the wire — if the seats
-# misbehave, this map is the first thing to check.
+# THE ONE REMAINING UNVERIFIED ASSUMPTION. The server takes an integer here (it
+# accepts 1 and 0 and rejects booleans and strings), but it will not tell us what the
+# integers MEAN. SeatLevelValue reads cool_high, cool_mid, cool_low, nope, heat_low,
+# heat_mid, heat_high — "nope" sitting in the middle is what a symmetric -3..+3 scale
+# looks like, and is why 0 is used for off below.
+#
+# The alternative reading is that the enum has default 0-based raw values, making
+# cool_high=0 and nope=3. If that is right, every climate start sends 0 for untouched
+# seats and would blast seat COOLING. So: on the first live climate test, watch the
+# seats. If they come on cold with everything set to off, this map is the culprit —
+# shift it to 0..6 with off=3.
 SEAT_LEVELS: dict[str, int] = {
     "cool_high": -3,
     "cool_medium": -2,

@@ -15,12 +15,12 @@ from .entity import KgmLinkSettingEntity
 # Only the front seats are enabled out of the box; rear rows exist on some trims and
 # would otherwise just be clutter, so they ship disabled but available.
 SEATS: dict[str, tuple[str, bool]] = {
-    "driveSeat": ("seat_driver", True),
-    "passengerSeat": ("seat_passenger", True),
-    "secondLeftSeat": ("seat_second_left", False),
-    "secondRightSeat": ("seat_second_right", False),
-    "thirdLeftSeat": ("seat_third_left", False),
-    "thirdRightSeat": ("seat_third_right", False),
+    "drvtSeat": ("seat_driver", True),
+    "psstSeat": ("seat_passenger", True),
+    "scndLeftSeat": ("seat_second_left", False),
+    "scndRghtSeat": ("seat_second_right", False),
+    "thrdLeftSeat": ("seat_third_left", False),
+    "thrdRghtSeat": ("seat_third_right", False),
 }
 
 

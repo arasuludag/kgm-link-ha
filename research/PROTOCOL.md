@@ -220,10 +220,110 @@ See §7.4 for the technique. Every body below is the app's exact `Codable` struc
 | Remote-service history | `/Customer/V1/GetRemoteServicesHistoryCount` | — |
 | Live location (alt) | `/Customer/V1/CurrentVehicleLocation` | — |
 
-**NOTE the field name change:** remote commands use **`vehicleId`** (camelCase), NOT the
-`vehlId` used by the status/detail endpoints. Do not reuse `F_VEHL_ID` for these.
+**Remote commands take `vehlId`, the same key as every other endpoint.** (An earlier
+revision of this file claimed they took `vehicleId` — that came from the Swift property
+name and is wrong. The server asks for `vehlId` on all eight command endpoints.)
 
-### 7.2 Request bodies (exact field names + Swift types)
+### 7.2 Request bodies — ⚠️ THESE ARE CodingKeys *PROPERTY* NAMES, NOT WIRE NAMES
+
+**CORRECTION (2026-08-31, proven against the live server.)** The names below are the Swift
+property names of each body's `CodingKeys` enum. That enum's **raw values** — the actual JSON
+keys — are different and heavily abbreviated. Sending `rearWindowHeatOn` got:
+
+```
+/Customer/V1/RemoteEngineStartEv -> 10001 rearWndoHtln is required
+```
+
+So `case rearWindowHeatOn = "rearWndoHtln"`. The reflection metadata gives the case *names*;
+the raw values are Swift **small strings** (<= 15 UTF-8 bytes), which the compiler materialises
+as `movz`/`movk` immediates inside the instruction stream rather than as literals — they are NOT
+in `__cstring`, NOT in `__swift5_reflstr`, and NOT findable by a raw byte search. Verified: zero
+hits for `rearWndoHtln`, `WndoHtln`, `Wndo`, `Htln` anywhere in the 27 MB binary.
+
+**The structure below is still correct** — the field count, order, and Swift types are right,
+and `vehicleId` + `pin` are confirmed correct on the wire (the server accepted both and moved
+on to complain about a later field). Only the abbreviated key spellings are unknown.
+
+**How to get the real names — the server spells them out.** It returns `10001 <name> is required`
+for the first missing required field, so adding fields one at a time walks the whole body out.
+A rejected body is refused at validation and **never reaches the car** — no wake, no 12 V cost —
+and it costs no PIN attempts as long as the real PIN is sent. `research/probe_commands.py` runs
+this loop for every command endpoint, using a bogus `vehicleId` so a complete body can never
+actuate. That is cheaper and safer than a Proxyman capture, which requires driving the real app.
+
+Response DTOs are unaffected: those declare the abbreviated names as the Swift property names
+directly (`btrSoc`, `drvtDoorStat`, `seatDrvSt`), so the metadata dump is authoritative for them.
+
+**RECOVERED IN FULL (server-verified, 2026-08-31).** Property name -> wire key:
+
+| Swift property | Wire key | Endpoint |
+|---|---|---|
+| `vehicleId` | **`vehlId`** | all eight |
+| `pin` | `pin` | all eight |
+| `isDoorLock` | **`doorLock`** | RemoteDoor |
+| `lamp` | `lamp` | RemoteLampHornOn |
+| `lampHorn` | `lampHorn` | RemoteLampHornOn |
+| `hvacOn` | `hvacOn` | RemoteEngineStartEv |
+| `defrostOn` | **`dfstOn`** | RemoteEngineStartEv |
+| `rearWindowHeatOn` | **`rearWndoHtln`** | RemoteEngineStartEv |
+| `acTemperature` | **`aconTmpt`** | RemoteEngineStartEv |
+| `timeoutToTurnOffEngine` | **`tot`** | RemoteEngineStartEv |
+| `driveSeat` | **`drvtSeat`** | RemoteEngineStartEv |
+| `passengerSeat` | **`psstSeat`** | RemoteEngineStartEv |
+| `secondLeftSeat` | **`scndLeftSeat`** | RemoteEngineStartEv |
+| `secondRightSeat` | **`scndRghtSeat`** | RemoteEngineStartEv |
+| `thirdLeftSeat` | **`thrdLeftSeat`** | RemoteEngineStartEv |
+| `thirdRightSeat` | **`thrdRghtSeat`** | RemoteEngineStartEv |
+
+The abbreviation scheme is irregular — `acTemperature` became `aconTmpt` while `lamp` and
+`hvacOn` were left alone, `timeoutToTurnOffEngine` collapsed to `tot`, and `Right` is spelled
+`Rght`. None of it is derivable from the Swift names; it all had to come from the server.
+
+**These five take nothing but `vehlId` + `pin`:** RemoteEngineStopEv, RemoteHvacStop,
+ImmediateChargeStartCmd, ImmediateChargeCancelCmd, RemoteLampHornOff.
+
+### 7.2a The two probe signals
+
+| Response | Means |
+|---|---|
+| `10001 <name> is required.` | that field is missing **or** its value read as empty |
+| `10002 Minimum data length must be 1` | a value was an empty string |
+| `20100 Invalid vehicle information.` | **schema satisfied** — the body is complete and well formed, and only the bogus `vehlId` stopped it. This is the success terminator. |
+
+Two traps that cost a probe round each:
+1. Seed a discovered field with a plausibly-*typed* value. A wrongly typed one (`vehlId: false`)
+   draws a generic `20130 Invalid data` that names no field, stalling the walk.
+2. **Stop on 20100.** A walk that keeps mutating the last field after the body is already valid
+   will march a working value off the end of its candidate list and report a false failure.
+
+### 7.2c Value encodings — CONFIRMED against the live server
+
+The rules are per-field and NOT uniform. Sending the wrong JSON type gets
+`10001 <name> is required` even when the field is present, which reads as a missing
+field and is what makes this worth writing down.
+
+| Fields | Accepts | Rejects |
+|---|---|---|
+| `doorLock`, `hvacOn`, `dfstOn`, `rearWndoHtln`, `lamp`, `lampHorn` | `true`, `false`, `1`, `0` | `"Y"`, `"N"`, `"1"`, `"0"` |
+| the six `*Seat` fields | `1`, `0`, `"1"`, `"0"` | `true`, `false`, `"Y"`, `"N"` |
+| `aconTmpt`, `tot` | `1`, `"1"` | `true`, `false`, `"Y"`, `"N"`, **and `0`** |
+
+Three things fall out of that:
+- **JSON booleans are right for the flags** — including `false`. An earlier probe round
+  suggested `false` read as "missing"; that was the probe failing to stop on 20100, not the
+  server. Unlock really is `{"doorLock": false}`.
+- **Seats are integers**, and booleans are rejected — so they are a numeric scale, not flags.
+- **`aconTmpt` and `tot` reject 0**, so both are validated as non-zero numbers. Neither can be
+  used to mean "off"; `hvacOn: false` is how you say that.
+
+**Still unverified: what the seat integers MEAN.** The server takes any integer without
+telling us the scale. `SeatLevelValue` reads cool_high, cool_mid, cool_low, nope, heat_low,
+heat_mid, heat_high — "nope" in the middle is what a symmetric −3..+3 scale looks like, so the
+integration uses 0 for off. If instead the enum carries default 0-based raw values then
+cool_high=0 and nope=3, and every climate start would be sending maximum seat COOLING for
+untouched seats. Watch the seats on the first live climate test; that is the tell.
+
+### 7.2b Body structure (Swift property names + types)
 
 ```
 RemoteBasicBody        { vehicleId: Int, pin: String }

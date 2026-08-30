@@ -21,21 +21,40 @@ from .const import (
     EP_LOCATION_CMD,
     EP_LOCATION_RESULT,
     EP_CHANGE_DETAIL,
+    EP_CHARGE_START,
+    EP_CHARGE_STOP,
+    EP_ENGINE_START_EV,
+    EP_ENGINE_STOP_EV,
+    EP_HVAC_STOP,
+    EP_LAMP_HORN_OFF,
+    EP_LAMP_HORN_ON,
     EP_LOGIN,
+    EP_REMOTE_DOOR,
     EP_PUBLIC_KEY,
     EP_REFRESH_TOKEN,
     EP_STATUS_CMD_EV,
     EP_STATUS_RESULT_EV,
     EP_VEHICLE_FIX_DETAIL,
     EP_VEHICLES,
+    F_AC_TEMPERATURE,
     F_CNNC_SCN,
+    F_DEFROST_ON,
     F_EML,
+    F_ENGINE_TIMEOUT,
+    F_HVAC_ON,
+    F_IS_DOOR_LOCK,
+    F_LAMP,
+    F_LAMP_HORN,
     F_PASSWORD,
+    F_PIN,
     F_RCTL_MN_ID,
+    F_REAR_HEAT_ON,
     F_REFRESH_TOKEN,
     F_TOKEN,
     F_VEHICLES,
+    F_VEHICLE_ID,
     F_VEHL_ID,
+    SEAT_FIELDS,
     RESULT_POLL_INTERVAL_S,
     RESULT_POLL_TIMEOUT_S,
 )
@@ -53,6 +72,10 @@ class KgmLinkAuthError(Exception):
 class KgmLinkApiError(Exception):
     """Transport or server-side error."""
 
+    def __init__(self, message: str, data: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.data = data or {}
+
 
 class KgmLinkPinError(KgmLinkApiError):
     """Remote PIN rejected or locked."""
@@ -68,6 +91,9 @@ class KgmLinkClient:
     _token: str | None = field(default=None, repr=False)
     _refresh_token: str | None = field(default=None, repr=False)
     _public_key: object | None = field(default=None, repr=False)
+    # The server runs ONE remote command per account at a time ("previous command has
+    # not ended yet"), so every car-touching call is serialised through this.
+    _command_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     @property
     def base_url(self) -> str:
@@ -161,6 +187,12 @@ class KgmLinkClient:
     async def _cmd_then_poll(
         self, cmd_ep: str, result_ep: str, cmd_body: dict[str, Any], vehicle_id: int
     ) -> dict[str, Any]:
+        async with self._command_lock:
+            return await self._cmd_then_poll_locked(cmd_ep, result_ep, cmd_body, vehicle_id)
+
+    async def _cmd_then_poll_locked(
+        self, cmd_ep: str, result_ep: str, cmd_body: dict[str, Any], vehicle_id: int
+    ) -> dict[str, Any]:
         cmd = await self._post(cmd_ep, cmd_body)
         if cmd.get("isPinLocked"):
             raise KgmLinkPinError("remote PIN is locked")
@@ -182,3 +214,88 @@ class KgmLinkClient:
             if not result.get("retryFlag", False):
                 return result
         raise KgmLinkApiError(f"{result_ep}: timed out waiting for result")
+
+    # --- remote commands ----------------------------------------------------
+    # These ACTUATE the car. Every one takes the remote PIN, and the server runs
+    # only one remote command at a time. Results are NOT pollable — the app gets
+    # them by Firebase push (research/PROTOCOL.md §7.3) — so a successful return
+    # here means "the server accepted the command", not "the car did it".
+
+    async def _remote(self, path: str, vehicle_id: int, **extra: Any) -> dict[str, Any]:
+        body = {F_VEHICLE_ID: int(vehicle_id), F_PIN: self._require_pin(), **extra}
+        async with self._command_lock:
+            data = await self._post(path, body)
+        if data.get("isPinLocked"):
+            raise KgmLinkPinError("remote PIN is locked")
+        if data.get("errorCode"):
+            raise KgmLinkApiError(
+                f"{path} -> {data['errorCode']} {data.get('errorMessage')}", data
+            )
+        return data
+
+    async def async_set_door_lock(self, vehicle_id: int, lock: bool) -> dict[str, Any]:
+        """Lock (True) or unlock (False) the doors."""
+        return await self._remote(EP_REMOTE_DOOR, vehicle_id=vehicle_id, **{F_IS_DOOR_LOCK: lock})
+
+    async def async_set_charging(self, vehicle_id: int, charge: bool) -> dict[str, Any]:
+        """Start or cancel charging immediately."""
+        return await self._remote(
+            EP_CHARGE_START if charge else EP_CHARGE_STOP, vehicle_id=vehicle_id
+        )
+
+    async def async_start_climate(
+        self,
+        vehicle_id: int,
+        *,
+        temperature: float,
+        duration: int,
+        hvac_on: bool = True,
+        defrost: bool = False,
+        rear_window_heat: bool = False,
+        seats: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        """Precondition the cabin. The car stops on its own after `duration` minutes."""
+        seats = seats or {}
+        return await self._remote(
+            EP_ENGINE_START_EV,
+            vehicle_id=vehicle_id,
+            **{
+                F_HVAC_ON: hvac_on,
+                F_DEFROST_ON: defrost,
+                F_REAR_HEAT_ON: rear_window_heat,
+                F_AC_TEMPERATURE: float(temperature),
+                F_ENGINE_TIMEOUT: int(duration),
+                **{seat: int(seats.get(seat, 0)) for seat in SEAT_FIELDS},
+            },
+        )
+
+    async def async_stop_climate(self, vehicle_id: int) -> dict[str, Any]:
+        """Stop preconditioning.
+
+        RemoteHvacStop is the climate-only stop; RemoteEngineStopEv shuts the whole
+        remote session down. Try the former and fall back, since which one a given
+        vehicle accepts is not something the binary tells us.
+
+        The fallback is skipped whenever the first rejection looks like a PIN problem.
+        The remote PIN locks out after a handful of wrong attempts, and spending two of
+        them on one button press is not a trade worth making.
+        """
+        try:
+            return await self._remote(EP_HVAC_STOP, vehicle_id=vehicle_id)
+        except KgmLinkPinError:
+            raise
+        except KgmLinkApiError as err:
+            if err.data.get("failCount"):
+                raise
+            _LOGGER.debug("RemoteHvacStop rejected (%s); trying RemoteEngineStopEv", err)
+            return await self._remote(EP_ENGINE_STOP_EV, vehicle_id=vehicle_id)
+
+    async def async_set_lamp_horn(
+        self, vehicle_id: int, *, lamp: bool = True, horn: bool = False
+    ) -> dict[str, Any]:
+        """Flash the lights and/or sound the horn. Both False turns them back off."""
+        if not lamp and not horn:
+            return await self._remote(EP_LAMP_HORN_OFF, vehicle_id=vehicle_id)
+        return await self._remote(
+            EP_LAMP_HORN_ON, vehicle_id=vehicle_id, **{F_LAMP: lamp, F_LAMP_HORN: horn}
+        )

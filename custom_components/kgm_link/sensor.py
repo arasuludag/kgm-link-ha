@@ -16,16 +16,13 @@ from datetime import datetime
 
 from homeassistant.const import PERCENTAGE, UnitOfLength, UnitOfTime
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import KgmLinkConfigEntry
 from .const import (
     CHARGING_ACTIVE,
     CHARGING_STATES,
-    DOMAIN,
     F_CHARGE_80_H,
     F_CHARGE_80_M,
     F_CHARGE_FULL_H,
@@ -36,6 +33,7 @@ from .const import (
     F_SOC,
     F_UPDATED,
 )
+from .entity import KgmLinkDescribedEntity
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -134,22 +132,9 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class KgmLinkSensor(CoordinatorEntity, SensorEntity):
+class KgmLinkSensor(KgmLinkDescribedEntity, SensorEntity):
     entity_description: KgmSensor
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator, description: KgmSensor) -> None:
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._attr_unique_id = f"{coordinator.vehicle_id}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(coordinator.vehicle_id))},
-            manufacturer="KG Mobility",
-            name=coordinator.device_name,
-            model=coordinator.model,
-            serial_number=coordinator.vin,
-        )
 
     @property
     def native_value(self) -> Any:
-        return self.entity_description.value_fn(self.coordinator.data or {})
+        return self.entity_description.value_fn(self.status)

@@ -77,3 +77,92 @@ CHARGING_ACTIVE = {1}  # int values that mean "actively charging"
 DEFAULT_SCAN_INTERVAL = timedelta(minutes=15)
 RESULT_POLL_INTERVAL_S = 4
 RESULT_POLL_TIMEOUT_S = 60
+
+# --- Remote command endpoints (all POST) ------------------------------------
+# Schemas recovered from the app binary's Swift reflection metadata; see
+# research/PROTOCOL.md §7. NOTE: these take "vehicleId", NOT the "vehlId" the
+# status/detail endpoints use.
+EP_REMOTE_DOOR = "/Customer/V1/RemoteDoor"              # {vehicleId, pin, isDoorLock}
+EP_ENGINE_START_EV = "/Customer/V1/RemoteEngineStartEv"  # climate/precondition start
+EP_ENGINE_STOP_EV = "/Customer/V1/RemoteEngineStopEv"    # {vehicleId, pin}
+EP_HVAC_STOP = "/Customer/V1/RemoteHvacStop"             # {vehicleId, pin}
+EP_CHARGE_START = "/Customer/V1/ImmediateChargeStartCmd"  # {vehicleId, pin}
+EP_CHARGE_STOP = "/Customer/V1/ImmediateChargeCancelCmd"  # {vehicleId, pin}
+EP_LAMP_HORN_ON = "/Customer/V1/RemoteLampHornOn"        # {vehicleId, pin, lamp, lampHorn}
+EP_LAMP_HORN_OFF = "/Customer/V1/RemoteLampHornOff"      # {vehicleId, pin}
+
+# --- Remote command body fields ---------------------------------------------
+F_VEHICLE_ID = "vehicleId"       # remote commands only (cf. F_VEHL_ID elsewhere)
+F_PIN = "pin"
+F_IS_DOOR_LOCK = "isDoorLock"    # True = lock, False = unlock
+F_LAMP = "lamp"
+F_LAMP_HORN = "lampHorn"
+# RemoteEngineStartV1Body
+F_HVAC_ON = "hvacOn"
+F_DEFROST_ON = "defrostOn"
+F_REAR_HEAT_ON = "rearWindowHeatOn"
+F_AC_TEMPERATURE = "acTemperature"
+F_ENGINE_TIMEOUT = "timeoutToTurnOffEngine"   # minutes; the app caps this at 10
+SEAT_FIELDS: tuple[str, ...] = (
+    "driveSeat", "passengerSeat",
+    "secondLeftSeat", "secondRightSeat",
+    "thirdLeftSeat", "thirdRightSeat",
+)
+
+# --- Wake-only status fields (VehicleStatusCheckResultEv) --------------------
+# Each *Stat has a matching *StatDesc string from the server; prefer the desc when
+# present since the int encodings are not documented anywhere.
+F_DOOR_LOCK_STATES: dict[str, str] = {   # lock state (locked / unlocked)
+    "drvtDoorStat": "door_lock_driver",
+    "psstDoorStat": "door_lock_passenger",
+    "rearDoorStat": "door_lock_rear",
+}
+F_OPEN_STATES: dict[str, str] = {        # physically open / closed
+    "drvtDoorOpndStat": "door_driver",
+    "psstDoorOpndStat": "door_passenger",
+    "rearLeftDoorOpndStat": "door_rear_left",
+    "rearRghtDoorOpndStat": "door_rear_right",
+    "tlgtOpndStat": "tailgate",
+    "hoodOpndStat": "hood",
+    "srfStat": "sunroof",
+}
+F_HEADLAMP = "hdeLampStat"
+
+# --- Per-vehicle HVAC bounds (from the vehicle detail payload) ---------------
+F_HVAC_TEMP_MIN = "hvactempMin"
+F_HVAC_TEMP_MAX = "hvactempMax"
+DEFAULT_HVAC_TEMP_MIN = 16.0
+DEFAULT_HVAC_TEMP_MAX = 32.0
+DEFAULT_HVAC_TEMP = 22.0
+HVAC_TEMP_STEP = 0.5
+
+# Climate run time. The app's own picker is 1-10 minutes.
+MIN_CLIMATE_DURATION = 1
+MAX_CLIMATE_DURATION = 10
+DEFAULT_CLIMATE_DURATION = 10
+
+# --- Seat heat/vent levels (SeatLevelValue) ---------------------------------
+# The enum is symmetric around "nope", so the raw values are almost certainly
+# -3..+3. INFERRED from declaration order, not observed on the wire — if the seats
+# misbehave, this map is the first thing to check.
+SEAT_LEVELS: dict[str, int] = {
+    "cool_high": -3,
+    "cool_medium": -2,
+    "cool_low": -1,
+    "off": 0,
+    "heat_low": 1,
+    "heat_medium": 2,
+    "heat_high": 3,
+}
+SEAT_LEVEL_OPTIONS: list[str] = list(SEAT_LEVELS)
+
+# --- Remote command behaviour -----------------------------------------------
+# Remote command results are delivered to the app by Firebase push, which HA cannot
+# receive (research/PROTOCOL.md §7.3). We set state optimistically and then re-read
+# the FREE cached endpoint, which costs the car nothing. Twice, because the car can
+# take the best part of a minute to actually act on something like a charge start.
+COMMAND_SETTLE_DELAYS_S: tuple[int, ...] = (15, 60)
+
+# Raw btrChargingStat values, for optimistic state after a charge command.
+CHARGING_STATE_CHARGING = 1
+CHARGING_STATE_NOT_CHARGING = 2

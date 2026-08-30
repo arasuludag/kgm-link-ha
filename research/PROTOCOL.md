@@ -192,3 +192,119 @@ Location = same two-step shape:
 
 Notes: only ONE remote command runs at a time ("previous command has not ended yet"); space
 Cmd calls out. The PIN is the remote-control PIN with a lockout (`failCount`/`maxRetryCount`).
+
+---
+
+## 7. Remote commands — FULL SCHEMAS (recovered 2026-08-30, no capture needed)
+
+Recovered **statically** from the app binary's Swift reflection metadata
+(`__swift5_fieldmd` field descriptors + `__swift5_reflstr` strings), not from traffic.
+See §7.4 for the technique. Every body below is the app's exact `Codable` struct.
+
+### 7.1 Endpoints (all POST, same signed envelope + Bearer, `X-Encrypted: False`)
+
+| Action | Path | Body type |
+|---|---|---|
+| Lock / unlock doors | `/Customer/V1/RemoteDoor` | `RemoteDoorLockBody` |
+| Climate/engine START (EV) | `/Customer/V1/RemoteEngineStartEv` | `RemoteEngineStartV1Body` |
+| Climate/engine STOP (EV) | `/Customer/V1/RemoteEngineStopEv` | `RemoteBasicBody` |
+| Climate STOP (HVAC only) | `/Customer/V1/RemoteHvacStop` | `RemoteBasicBody` |
+| Engine start/stop (ICE) | `/Customer/V1/RemoteEngineStart` / `RemoteEngineStop` | as above |
+| Charge START now | `/Customer/V1/ImmediateChargeStartCmd` | `RemoteBasicBody` |
+| Charge STOP now | `/Customer/V1/ImmediateChargeCancelCmd` | `RemoteBasicBody` |
+| Lights+horn ON | `/Customer/V1/RemoteLampHornOn` | `RemoteLampHornOnBody` |
+| Lights+horn OFF | `/Customer/V1/RemoteLampHornOff` | `RemoteBasicBody` |
+| Set charge schedule | `/Customer/V1/OverwriteScheduleChargeCmd` | `OverWriteScheduleChargeCmdBody` |
+| Read charge schedule | `/Customer/V1/QueryScheduleChargeCmd` | `RemoteBasicBody` |
+| Charge-schedule result | `/Customer/V1/QueryOverwriteScheduleChargeResult` | `RemoteControlBody` |
+| Remote-service history | `/Customer/V1/GetRemoteServicesHistoryCount` | — |
+| Live location (alt) | `/Customer/V1/CurrentVehicleLocation` | — |
+
+**NOTE the field name change:** remote commands use **`vehicleId`** (camelCase), NOT the
+`vehlId` used by the status/detail endpoints. Do not reuse `F_VEHL_ID` for these.
+
+### 7.2 Request bodies (exact field names + Swift types)
+
+```
+RemoteBasicBody        { vehicleId: Int, pin: String }
+RemoteDoorLockBody     { vehicleId: Int, pin: String, isDoorLock: Bool }   # true = LOCK
+RemoteLampHornOnBody   { vehicleId: Int, pin: String, lamp: Bool, lampHorn: Bool }
+RemoteControlBody      { remoteControlId: Int }                            # = rctlMnId
+
+RemoteEngineStartV1Body {
+    vehicleId: Int, pin: String,
+    hvacOn: Bool, defrostOn: Bool, rearWindowHeatOn: Bool,
+    acTemperature: Double,             # °C; bounds are per-vehicle (hvactempMin/hvactempMax)
+    timeoutToTurnOffEngine: Int,       # MINUTES the climate/engine runs (app caps at 10)
+    driveSeat: Int, passengerSeat: Int,
+    secondLeftSeat: Int, secondRightSeat: Int,
+    thirdLeftSeat: Int, thirdRightSeat: Int,   # seat level, see SeatLevelValue
+}
+
+OverWriteScheduleChargeCmdBody {
+    vehicleId: Int, pin: String, scheduleType: Int,
+    startTime: Int?, startMinute: Int?, finishTime: Int?, finishMinute: Int?,
+    days: [Int],
+}
+```
+
+`RemoteEngineEntity` / `RemoteEngineSettingsModel` are the app's locally-stored last-used
+climate preset (`temperature`, `hvacOn`, `engineOnDuration`, `defrost`, `backHeatLine`).
+
+### 7.3 Command response + result delivery
+
+Every remote command returns `RemoteCommandDTO`:
+```
+{ rctlMnId, maxRetryCount, failCount, isPinLocked, isInvalidFingerPrintKey,
+  errorCode, errorMessage }
+```
+
+**THERE IS NO RESULT-POLLING ENDPOINT FOR THESE.** Unlike status/location (Cmd -> Result),
+remote command outcomes are delivered to the app by **Firebase PUSH**:
+> "The result of the charging start will be notified via a PUSH message."
+> "%1$@ request has been sent. Please check the vehicle status for the %1$@ result.
+>  (PUSH information retrieval failed)"  <- the app's own fallback
+
+HA cannot receive that push. So the integration must use the app's fallback path: fire the
+command, then (optionally, after a delay) re-read vehicle status to observe the effect.
+Only `OverwriteScheduleChargeCmd` has a pollable result (`QueryOverwriteScheduleChargeResult`,
+which does carry `retryFlag` + `isSuccess`).
+
+Serialisation still applies: only ONE remote command at a time.
+
+### 7.4 Enums
+
+```
+BatteryChargingStatus : charging, notCharging, invalid, ccuInternalerror, timeout
+    -> declaration order + the CONFIRMED notCharging=2 implies raw values start at 1:
+       1=charging, 2=notCharging, 3=invalid, 4=ccuInternalError, 5=timeout.
+ChargingGunType : none, ac, dc, unknown, invalid      # btcgType
+SeatLevelValue  : cool_high, cool_mid, cool_low, nope, heat_low, heat_mid, heat_high
+SeatLevel       : none, level1, level2, level3
+SeatOption      : none, heater, ventilation, heaterAndVentilation
+SeatPosition    : driver, assistant, secondLeft, secondRight, thirdLeft, thirdRight
+RemoteFeature   : engine, door, lamphorn, findParkingSpot, vehicleStatus, batteryCharge
+```
+Per-vehicle capability + HVAC bounds come from the vehicle detail payloads:
+`hvactempMin` / `hvactempMax` (Double?), and `SeatInfoDTO`
+(`seatDrvSt/seatPsgSt/seat2ndLSt/...` = supported option, `seatDrvLv/...` = level count).
+The app hides unsupported controls ("This vehicle does not support temperature control.").
+
+### 7.5 HOW these were recovered — reuse this instead of capturing
+
+The binary is unstripped Swift; every `Codable` struct's field names sit in the reflection
+metadata. No radare2, no Frida, no proxy:
+
+1. `otool -l Ccs | grep -A4 "sectname __swift5_fieldmd"` -> section vmaddr + file offset
+   (also `__swift5_reflstr`, `__swift5_typeref`). Slide = vmaddr - fileoffset.
+2. Walk `__swift5_fieldmd` as `FieldDescriptor { int32 mangledTypeName(rel), int32 superclass(rel),
+   uint16 kind, uint16 recordSize(=12), uint32 numFields }` followed by `numFields` x
+   `FieldRecord { uint32 flags, int32 mangledTypeName(rel), int32 fieldName(rel) }`.
+   Relative pointers are `offset_of_the_field + value`.
+3. `fieldName` -> C string in `__swift5_reflstr` (plain). The descriptor's `mangledTypeName`
+   is usually a **symbolic reference**: first byte `0x01` then an int32 relative pointer to
+   the nominal type descriptor, whose `Name` is a relative pointer at descriptor+8.
+4. Endpoint paths are plain strings: `strings -a Ccs | grep -E "^[A-Za-z]+/V[0-9]/"`.
+5. UI-visible constants/labels: `plutil -convert json -o - en.lproj/Localizable.strings`.
+
+Script used: `research/dump_swift_fields.py`.

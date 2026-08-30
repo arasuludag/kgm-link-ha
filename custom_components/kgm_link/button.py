@@ -8,12 +8,11 @@ from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import KgmLinkConfigEntry
-from .const import DOMAIN
 from .coordinator import KgmLinkCoordinator
+from .entity import KgmLinkDescribedEntity
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -32,6 +31,30 @@ BUTTONS: tuple[KgmButton, ...] = (
         translation_key="refresh",
         press_fn=lambda c: c.async_wake_refresh(),
     ),
+    # Find-my-car: flashing the lights is the harmless one, so it is the default;
+    # the horn is separate because it is not something to press by accident.
+    KgmButton(
+        key="flash_lights",
+        translation_key="flash_lights",
+        press_fn=lambda c: c.async_command(
+            lambda: c.client.async_set_lamp_horn(c.vehicle_id, lamp=True, horn=False)
+        ),
+    ),
+    KgmButton(
+        key="horn_and_lights",
+        translation_key="horn_and_lights",
+        entity_registry_enabled_default=False,
+        press_fn=lambda c: c.async_command(
+            lambda: c.client.async_set_lamp_horn(c.vehicle_id, lamp=True, horn=True)
+        ),
+    ),
+    KgmButton(
+        key="lights_off",
+        translation_key="lights_off",
+        press_fn=lambda c: c.async_command(
+            lambda: c.client.async_set_lamp_horn(c.vehicle_id, lamp=False, horn=False)
+        ),
+    ),
 )
 
 
@@ -46,21 +69,8 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class KgmLinkButton(ButtonEntity):
+class KgmLinkButton(KgmLinkDescribedEntity, ButtonEntity):
     entity_description: KgmButton
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator: KgmLinkCoordinator, description: KgmButton) -> None:
-        self.coordinator = coordinator
-        self.entity_description = description
-        self._attr_unique_id = f"{coordinator.vehicle_id}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(coordinator.vehicle_id))},
-            manufacturer="KG Mobility",
-            name=coordinator.device_name,
-            model=coordinator.model,
-            serial_number=coordinator.vin,
-        )
 
     async def async_press(self) -> None:
         await self.entity_description.press_fn(self.coordinator)

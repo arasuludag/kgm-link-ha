@@ -21,6 +21,11 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.DEVICE_TRACKER,
     Platform.BUTTON,
+    Platform.LOCK,
+    Platform.SWITCH,
+    Platform.CLIMATE,
+    Platform.NUMBER,
+    Platform.SELECT,
 ]
 
 type KgmLinkConfigEntry = ConfigEntry[list[KgmLinkCoordinator]]
@@ -47,6 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KgmLinkConfigEntry) -> b
             continue  # EV-only for now; ICE status is a different endpoint
         coordinator = KgmLinkCoordinator(hass, entry, client, vehicle)
         await coordinator.async_config_entry_first_refresh()
+        await coordinator.async_load_detail()
         coordinators.append(coordinator)
 
     entry.runtime_data = coordinators

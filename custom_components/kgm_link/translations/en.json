@@ -60,11 +60,144 @@
       },
       "refresh": {
         "name": "Refresh (wake car)"
+      },
+      "flash_lights": {
+        "name": "Flash lights"
+      },
+      "horn_and_lights": {
+        "name": "Horn and lights"
+      },
+      "lights_off": {
+        "name": "Lights off"
       }
     },
     "binary_sensor": {
       "charging": {
         "name": "Charging"
+      },
+      "door_driver": {
+        "name": "Driver door"
+      },
+      "door_passenger": {
+        "name": "Passenger door"
+      },
+      "door_rear_left": {
+        "name": "Rear left door"
+      },
+      "door_rear_right": {
+        "name": "Rear right door"
+      },
+      "tailgate": {
+        "name": "Tailgate"
+      },
+      "hood": {
+        "name": "Hood"
+      },
+      "sunroof": {
+        "name": "Sunroof"
+      },
+      "headlamps": {
+        "name": "Headlamps"
+      }
+    },
+    "lock": {
+      "doors": {
+        "name": "Doors"
+      }
+    },
+    "switch": {
+      "charge": {
+        "name": "Charge"
+      },
+      "defrost": {
+        "name": "Defrost on climate start"
+      },
+      "rear_window_heat": {
+        "name": "Rear window heat on climate start"
+      }
+    },
+    "climate": {
+      "climate": {
+        "name": "Climate"
+      }
+    },
+    "number": {
+      "climate_duration": {
+        "name": "Climate run time"
+      }
+    },
+    "select": {
+      "seat_driver": {
+        "name": "Driver seat",
+        "state": {
+          "off": "Off",
+          "heat_low": "Heat low",
+          "heat_medium": "Heat medium",
+          "heat_high": "Heat high",
+          "cool_low": "Cool low",
+          "cool_medium": "Cool medium",
+          "cool_high": "Cool high"
+        }
+      },
+      "seat_passenger": {
+        "name": "Passenger seat",
+        "state": {
+          "off": "Off",
+          "heat_low": "Heat low",
+          "heat_medium": "Heat medium",
+          "heat_high": "Heat high",
+          "cool_low": "Cool low",
+          "cool_medium": "Cool medium",
+          "cool_high": "Cool high"
+        }
+      },
+      "seat_second_left": {
+        "name": "Second row left seat",
+        "state": {
+          "off": "Off",
+          "heat_low": "Heat low",
+          "heat_medium": "Heat medium",
+          "heat_high": "Heat high",
+          "cool_low": "Cool low",
+          "cool_medium": "Cool medium",
+          "cool_high": "Cool high"
+        }
+      },
+      "seat_second_right": {
+        "name": "Second row right seat",
+        "state": {
+          "off": "Off",
+          "heat_low": "Heat low",
+          "heat_medium": "Heat medium",
+          "heat_high": "Heat high",
+          "cool_low": "Cool low",
+          "cool_medium": "Cool medium",
+          "cool_high": "Cool high"
+        }
+      },
+      "seat_third_left": {
+        "name": "Third row left seat",
+        "state": {
+          "off": "Off",
+          "heat_low": "Heat low",
+          "heat_medium": "Heat medium",
+          "heat_high": "Heat high",
+          "cool_low": "Cool low",
+          "cool_medium": "Cool medium",
+          "cool_high": "Cool high"
+        }
+      },
+      "seat_third_right": {
+        "name": "Third row right seat",
+        "state": {
+          "off": "Off",
+          "heat_low": "Heat low",
+          "heat_medium": "Heat medium",
+          "heat_high": "Heat high",
+          "cool_low": "Cool low",
+          "cool_medium": "Cool medium",
+          "cool_high": "Cool high"
+        }
       }
     }
   }

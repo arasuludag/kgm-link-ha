@@ -10,12 +10,12 @@ from typing import Any
 
 from homeassistant.components.device_tracker import TrackerEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import KgmLinkConfigEntry
-from .const import DOMAIN, F_LAT, F_LON
+from .const import F_LAT, F_LON
+from .coordinator import KgmLinkCoordinator
+from .entity import KgmLinkEntity
 
 
 async def async_setup_entry(
@@ -26,23 +26,14 @@ async def async_setup_entry(
     async_add_entities(KgmLinkTracker(c) for c in entry.runtime_data)
 
 
-class KgmLinkTracker(CoordinatorEntity, TrackerEntity):
-    _attr_has_entity_name = True
+class KgmLinkTracker(KgmLinkEntity, TrackerEntity):
     _attr_translation_key = "car"
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.vehicle_id}_location"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(coordinator.vehicle_id))},
-            manufacturer="KG Mobility",
-            name=coordinator.device_name,
-            model=coordinator.model,
-            serial_number=coordinator.vin,
-        )
+    def __init__(self, coordinator: KgmLinkCoordinator) -> None:
+        super().__init__(coordinator, "location")
 
     def _loc(self) -> dict[str, Any]:
-        return (self.coordinator.data or {}).get("location") or {}
+        return self.status.get("location") or {}
 
     @property
     def latitude(self) -> float | None:

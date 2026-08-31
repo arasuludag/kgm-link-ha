@@ -87,6 +87,10 @@ class KgmLinkClient:
     session: ClientSession
     region: str = DEFAULT_REGION
     pin: str | None = None
+    # Held so an expired session can be recovered without user involvement — the
+    # refresh token expires too, and then a fresh login is the only way back.
+    email: str | None = None
+    password: str | None = field(default=None, repr=False)
     _token: str | None = field(default=None, repr=False)
     _refresh_token: str | None = field(default=None, repr=False)
     _public_key: object | None = field(default=None, repr=False)
@@ -123,14 +127,35 @@ class KgmLinkClient:
         return data
 
     async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Send with automatic 401 -> RefreshToken -> retry-once."""
+        """Send, recovering the session once if the server rejects our token."""
         try:
             return await self._send(path, payload)
         except KgmLinkAuthError:
-            if path in (EP_LOGIN, EP_REFRESH_TOKEN) or not self._refresh_token:
+            if path in (EP_LOGIN, EP_REFRESH_TOKEN):
                 raise
-            await self.async_refresh_token()
+            await self._reauthenticate()
             return await self._send(path, payload)
+
+    async def _reauthenticate(self) -> None:
+        """Refresh the session, falling back to a full re-login.
+
+        The refresh token expires as well ("Your session has expired. Please log in
+        again."), and when it does, refreshing can never succeed — so retrying it
+        forever would strand the config entry. Falling back to a login with the stored
+        credentials lets the integration heal itself; only a genuinely bad credential
+        gets as far as raising, which is what should trigger a reauth prompt.
+        """
+        if self._refresh_token:
+            try:
+                await self.async_refresh_token()
+                return
+            except KgmLinkAuthError as err:
+                if not (self.email and self.password):
+                    raise
+                _LOGGER.debug("Refresh token rejected (%s); logging in again", err)
+        elif not (self.email and self.password):
+            raise KgmLinkAuthError("session expired and no credentials to log back in")
+        await self.login(self.email, self.password)
 
     # --- session ------------------------------------------------------------
     async def login(self, email: str, password: str) -> dict[str, Any]:

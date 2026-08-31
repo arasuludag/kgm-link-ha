@@ -236,3 +236,43 @@ def test_the_five_bare_commands_send_nothing_extra():
     ):
         _, body = send(factory)
         assert set(body) == {"vehlId", "pin"}, body
+
+
+class ExpiredSessionClient(api.KgmLinkClient):
+    """A server whose access token AND refresh token have both expired."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.paths: list[str] = []
+
+    async def _send(self, path, payload):
+        self.paths.append(path)
+        if path == const.EP_LOGIN:
+            return {"token": "fresh", "refreshToken": "fresh-refresh"}
+        if path == const.EP_REFRESH_TOKEN:
+            raise api.KgmLinkAuthError("Your session has expired. Please log in again.")
+        if self._token != "fresh":
+            raise api.KgmLinkAuthError("token expired")
+        return {"btrSoc": 50}
+
+
+def test_expired_refresh_token_logs_back_in():
+    """The refresh token expires too, and refreshing can then never succeed.
+
+    Without the login fallback the config entry is stranded in reauth and every entity
+    goes unavailable — which is exactly what happened on 2026-08-31.
+    """
+    client = ExpiredSessionClient(session=None, pin="1234", email="a@b.test", password="pw")
+    client._refresh_token = "stale"
+
+    assert asyncio.run(client.async_read_cached(42)) == {"btrSoc": 50}
+    assert const.EP_REFRESH_TOKEN in client.paths, "should try a cheap refresh first"
+    assert const.EP_LOGIN in client.paths, "should fall back to a full login"
+
+
+def test_bad_credentials_still_surface():
+    """A real credential problem must raise, so HA prompts for reauth."""
+    client = ExpiredSessionClient(session=None, pin="1234", email=None, password=None)
+    client._refresh_token = "stale"
+    with pytest.raises(api.KgmLinkAuthError):
+        asyncio.run(client.async_read_cached(42))

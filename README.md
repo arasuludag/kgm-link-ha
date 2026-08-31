@@ -76,6 +76,11 @@ rejection, and only ever sends one command at a time (the server allows no more)
 The PIN is required for anything that wakes or commands the car. It is stored in the
 config entry like any other HA credential.
 
+Sessions expire on the server side — both the access token and the refresh token. The
+integration recovers on its own by logging back in with the stored credentials, so an
+expired session is not something you have to act on. You are only prompted to sign in
+again if the password itself stops working.
+
 > **Security note:** installing this puts *unlock* and *climate start* behind your Home
 > Assistant. Anyone with access to your HA — a shared dashboard, a guest account, a
 > compromised token — can unlock the car. Scope your users accordingly.
@@ -111,9 +116,19 @@ pure Python, and the suite checks them against the schemas in `research/PROTOCOL
 ## Contributing
 
 `research/PROTOCOL.md` is the reference: endpoints, request schemas, enums, and how they
-were recovered. Request schemas come from the app binary's Swift reflection metadata
-(`research/dump_swift_fields.py`) — you usually do **not** need a packet capture to add
-an endpoint.
+were recovered. Two sources, and it matters which you reach for:
+
+- **The app binary** (`research/dump_swift_fields.py`) gives endpoint paths, response
+  schemas, and the *shape* of a request body — field count, order and types.
+- **The server** gives request *key names*. Request bodies declare a Swift `CodingKeys`
+  enum whose raw values are the real JSON keys, and those are abbreviated beyond guessing
+  (`acTemperature` → `aconTmpt`, `timeoutToTurnOffEngine` → `tot`). They are compiled to
+  instruction immediates, so they are not in the binary as text. The server names the
+  first missing required field on every rejection, which walks a body out one field per
+  request — and a rejected body never reaches the car, so it costs nothing.
+
+So you usually do **not** need a packet capture, but you do need the server. See §7.2 and
+§7.5.
 
 If you do capture traffic, keep HAR exports in `captures/` (gitignored) and never paste
 raw captures into issues: they contain live bearer tokens and your VIN.

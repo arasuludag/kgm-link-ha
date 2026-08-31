@@ -10,6 +10,14 @@
           "pin": "Remote-control PIN",
           "region": "Region code (e.g. tr)"
         }
+      },
+      "reauth_confirm": {
+        "title": "KGM Link — sign in again",
+        "description": "The KGM Link session for {email} could not be renewed. Enter the password again.",
+        "data": {
+          "password": "Password",
+          "pin": "Remote-control PIN"
+        }
       }
     },
     "error": {
@@ -17,7 +25,8 @@
       "cannot_connect": "Could not reach KGM Link."
     },
     "abort": {
-      "already_configured": "This account is already configured."
+      "already_configured": "This account is already configured.",
+      "reauth_successful": "Signed back in to KGM Link."
     }
   },
   "entity": {

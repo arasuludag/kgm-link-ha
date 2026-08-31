@@ -37,6 +37,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: KgmLinkConfigEntry) -> b
         session=async_get_clientsession(hass),
         region=entry.data.get(CONF_REGION, DEFAULT_REGION),
         pin=entry.data.get(CONF_PIN),
+        email=entry.data[CONF_EMAIL],
+        password=entry.data[CONF_PASSWORD],
     )
     try:
         await client.login(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
